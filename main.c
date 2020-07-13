@@ -29,7 +29,7 @@ globject_t cubey;
 GLFWwindow* createWindow();
 
 unsigned int createGLTexture(image_t source);
-void setupPointerLockIcon(globject_t* object);
+void setupPointerLockIcon(globject_t* object, int posAttribute, int uvAttribute);
 void setupObject(indexedgeometry3d_t* source, globject_t* object);
 unsigned int setupShaderProgram(
     const char* vertexShaderSourceFilename,
@@ -44,6 +44,7 @@ void handleMouseButtonPress(GLFWwindow* window, int button, int action, int mod)
 #define POINTER_LOCKED (1 << 0)
 #define POINTER_HOVERING (1 << 1)
 #define POINTER_RMBDOWN (1 << 2)
+#define POINTER_LMBDOWN (1 << 3)
 unsigned char pointerLocked = 0;
 
 int main(int argc, char** argv)
@@ -109,7 +110,9 @@ int main(int argc, char** argv)
     lockIcon.material.shaderProgram = shaderProgram;
     int windowSizeUniform = glGetUniformLocation(shaderProgram, "windowSize");
     int iconTextureUniform = glGetUniformLocation(shaderProgram, "iconTex");
-    setupPointerLockIcon(&lockIcon);
+    int posAttribute2 = glGetAttribLocation(shaderProgram, "in_position");
+    int uvAttribute = glGetAttribLocation(shaderProgram, "in_uv");
+    setupPointerLockIcon(&lockIcon, posAttribute2, uvAttribute);
     // Process input and render
     glfwSetKeyCallback(window, handleKeyEvent);
     glfwSetCursorPosCallback(window, handleCursorPosition);
@@ -120,18 +123,21 @@ int main(int argc, char** argv)
     {
         glClearColor(0.2, 0., 0., 0.);
         glClear(GL_COLOR_BUFFER_BIT);
+        glEnablei(GL_BLEND, 0);
+        glBlendFuncSeparate(GL_SRC_COLOR, GL_SRC_COLOR, GL_SRC_ALPHA, GL_ZERO);
         // Draw pointer lock icon
         if((pointerLocked & POINTER_LOCKED) == POINTER_LOCKED)
         {
+            glDisable(GL_CULL_FACE);
+            glFrontFace(GL_CCW);
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             glUseProgram(lockIcon.material.shaderProgram);
             glUniform2f(windowSizeUniform, 400., 300.);
             glUniform1i(iconTextureUniform, 0);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, pointerLockTexture);
-            glDisable(GL_CULL_FACE);
-            glFrontFace(GL_CW);
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             glBindVertexArray(lockIcon.VAO);
+            glBindBuffer(GL_ARRAY_BUFFER, lockIcon.VBO);
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, lockIcon.EBO);
             glDrawElements(GL_TRIANGLES, lockIcon.drawCount, GL_UNSIGNED_INT, 0);
         }
@@ -196,6 +202,14 @@ void handleMouseButtonPress(GLFWwindow* window, int button, int action, int mod)
     {
         pointerLocked &= ~POINTER_RMBDOWN;
     }
+    if(button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
+    {
+        pointerLocked |= POINTER_LMBDOWN;
+    }
+    if(button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE)
+    {
+        pointerLocked &= ~POINTER_LMBDOWN;
+    }
     if((button == GLFW_MOUSE_BUTTON_LEFT || button == GLFW_MOUSE_BUTTON_RIGHT) && action == GLFW_PRESS)
     {
         if((pointerLocked & POINTER_HOVERING) == POINTER_HOVERING)
@@ -218,12 +232,12 @@ void handleCursorPosition(GLFWwindow* window, double xpos, double ypos)
     if((pointerLocked & POINTER_LOCKED) == POINTER_LOCKED)
     {
         printf("Mouse movement: %.3f %.3f\n", xpos - subx, ypos - suby);
-        if((pointerLocked & POINTER_RMBDOWN) != POINTER_RMBDOWN)
+        if((pointerLocked & POINTER_LMBDOWN) == POINTER_LMBDOWN)
         {
             cubey.offset[0] -= (xpos - subx) * .125;
             cubey.offset[1] += (ypos - suby) * .125;
         }
-        else
+        else if((pointerLocked & POINTER_RMBDOWN) == POINTER_RMBDOWN)
         {
             cubey.rot_x -= glm_rad(ypos - suby);
             cubey.rot_y += glm_rad(xpos - subx);
@@ -261,7 +275,7 @@ unsigned int createGLTexture(image_t source)
     return texture;
 }
 
-void setupPointerLockIcon(globject_t* object)
+void setupPointerLockIcon(globject_t* object, int posAttribute, int uvAttribute)
 {
     float lockIconVertices[] = {
         0.0, 0.0, 0.0, 0.0, // X Y S T
@@ -269,21 +283,28 @@ void setupPointerLockIcon(globject_t* object)
         1.0, 0.0, 1.0, 0.0,
         1.0, 1.0, 1.0, 1.0,
     };
-    unsigned int lockIconElements = {
+    unsigned int lockIconElements[] = {
         0, 1, 2,
         3, 2, 1
     };
     glGenVertexArrays(1, &object->VAO);
     glGenBuffers(1, &object->VBO);
-    glGenBuffers(1, &object->NBO);
+    // glGenBuffers(1, &object->NBO);
     glGenBuffers(1, &object->EBO);
-    glBindVertexArray(object->VAO);
     glBindBuffer(GL_ARRAY_BUFFER, object->VBO);
     glBufferData(GL_ARRAY_BUFFER, 16 * sizeof(float), lockIconVertices, GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, object->NBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, object->EBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, 6 * sizeof(unsigned int), lockIconElements, GL_STATIC_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    glBindVertexArray(object->VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, object->VBO);
+    glVertexAttribPointer(posAttribute, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), 0);
+    glEnableVertexAttribArray(posAttribute);
+    glVertexAttribPointer(uvAttribute, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+    glEnableVertexAttribArray(uvAttribute);
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
     object->drawCount = 6;
 }
 
