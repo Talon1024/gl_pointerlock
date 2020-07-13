@@ -1,21 +1,9 @@
 #include "cube.h"
 #include <stdlib.h>
 
-indexedgeometry3d_t new_indexedgeometry3d()
+indexedgeometry3d_t* makeIndexedCube()
 {
-    indexedgeometry3d_t object;
-    object.geometry = malloc(sizeof(geometry3d_t));
-    return object;
-}
-
-void delete_indexedgeometry3d_t(indexedgeometry3d_t object)
-{
-    free(object.geometry);
-}
-
-indexedgeometry3d_t makeIndexedCube()
-{
-    indexedgeometry3d_t cube = new_indexedgeometry3d();
+    indexedgeometry3d_t* cube = malloc(sizeof(indexedgeometry3d_t));
     float vertices[] = {
         1.0f, 1.0f, 1.0f,       // 0
         -1.0f, 1.0f, 1.0f,      // 1
@@ -26,8 +14,9 @@ indexedgeometry3d_t makeIndexedCube()
         -1.0f, -1.0f, -1.0f,    // 6
         1.0f, -1.0f, -1.0f,     // 7
     };
-    cube.geometry->vertices = vertices;
-    cube.geometry->vertexCount = 8;
+    cube->geometry.vertices = malloc(3 * 8 * sizeof(float));
+    memcpy(cube->geometry.vertices, vertices, 3 * 8 * sizeof(float));
+    cube->geometry.vertexCount = 8;
     unsigned int indices[] = {
         0, 1, 2,
         2, 3, 0,
@@ -42,7 +31,15 @@ indexedgeometry3d_t makeIndexedCube()
         2, 6, 3,
         6, 7, 3,
     };
-    cube.indices = indices;
-    cube.triIndexCount = 12;
+    cube->indices = malloc(3 * 12 * sizeof(unsigned int));
+    memcpy(cube->indices, indices, 3 * 12 * sizeof(unsigned int));
+    cube->triIndexCount = 12;
     return cube;
+}
+
+void destroyIndexedObject(indexedgeometry3d_t* object)
+{
+    free(object->geometry.vertices);
+    free(object->indices);
+    free(object);
 }

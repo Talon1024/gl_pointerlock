@@ -13,6 +13,8 @@ install: false)
 
 glad_dep = declare_dependency(sources: [glad_targ], link_args: ['-ldl'])
 
+cglm_inc = include_directories('cglm/include')
+
 deplist = [gl_dep, glfw_dep, glad_dep]
 
-executable('main', 'main.c', 'pngload.c', 'cube.c', dependencies: deplist)
+executable('main', 'main.c', 'pngload.c', 'cube.c', dependencies: deplist, include_directories: [cglm_inc], link_args: ['-lm'])
