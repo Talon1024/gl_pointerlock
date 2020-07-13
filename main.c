@@ -89,7 +89,7 @@ int main(int argc, char** argv)
     glVertexAttribPointer(posAttribute, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), NULL);
     glEnableVertexAttribArray(posAttribute);
     glBindBuffer(GL_ARRAY_BUFFER, cubey.NBO);
-    glVertexAttribPointer(colourAttribute, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), NULL);
+    glVertexAttribPointer(colourAttribute, 1, GL_FLOAT, GL_FALSE, 1 * sizeof(float), NULL);
     glEnableVertexAttribArray(colourAttribute);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
@@ -126,7 +126,7 @@ int main(int argc, char** argv)
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, pointerLockTexture);
             glDisable(GL_CULL_FACE);
-            glFrontFace(GL_CCW);
+            glFrontFace(GL_CW);
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             glBindVertexArray(lockIcon.VAO);
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, lockIcon.EBO);
@@ -136,9 +136,9 @@ int main(int argc, char** argv)
         glUseProgram(cubey.material.shaderProgram);
         mat4 view, projection;
         glm_mat4_identity(view);
-        glm_translate_z(view, -7);
+        glm_translate_z(view, -100);
         glm_mat4_identity(projection);
-        glm_perspective(90.0, 4./3., 0.1, 1000., projection);
+        glm_perspective(75.0, 4./3., 0.1, 1000., projection);
         glUniformMatrix4fv(viewUniform, 1, GL_FALSE, view[0]);
         glUniformMatrix4fv(projectionUniform, 1, GL_FALSE, projection[0]);
         drawObject(&cubey);
@@ -199,12 +199,19 @@ void handleMouseButtonPress(GLFWwindow* window, int button, int action, int mod)
     }
 }
 
+double subx = 0.0;
+double suby = 0.0;
+
 void handleCursorPosition(GLFWwindow* window, double xpos, double ypos)
 {
     if((pointerLocked & POINTER_LOCKED) == POINTER_LOCKED)
     {
-        printf("Mouse movement: %.3f %.3f\n", xpos, ypos);
+        printf("Mouse movement: %.3f %.3f\n", xpos - subx, ypos - suby);
+        cubey.offset[0] -= xpos - subx;
+        cubey.offset[1] += ypos - suby;
     }
+    subx = xpos;
+    suby = ypos;
 }
 
 
@@ -395,6 +402,7 @@ void drawObject(const globject_t* object)
     glUniformMatrix4fv(object->material.modelMatrixUniform, 1, GL_FALSE, model[0]);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
+    glFrontFace(GL_CCW);
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glBindVertexArray(object->VAO);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, object->EBO);
