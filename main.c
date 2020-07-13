@@ -14,6 +14,8 @@ typedef struct glmaterial {
 
 typedef struct globject {
     vec3 offset;
+    float rot_x;
+    float rot_y;
     glmaterial_t material;
     unsigned int VAO; // Vertex array
     unsigned int VBO; // Vertex buffer
@@ -41,6 +43,7 @@ void handleMouseButtonPress(GLFWwindow* window, int button, int action, int mod)
 
 #define POINTER_LOCKED (1 << 0)
 #define POINTER_HOVERING (1 << 1)
+#define POINTER_RMBDOWN (1 << 2)
 unsigned char pointerLocked = 0;
 
 int main(int argc, char** argv)
@@ -185,7 +188,15 @@ void handleCursorHover(GLFWwindow* window, int entered)
 
 void handleMouseButtonPress(GLFWwindow* window, int button, int action, int mod)
 {
-    if(button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
+    if(button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS)
+    {
+        pointerLocked |= POINTER_RMBDOWN;
+    }
+    if(button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_RELEASE)
+    {
+        pointerLocked &= ~POINTER_RMBDOWN;
+    }
+    if((button == GLFW_MOUSE_BUTTON_LEFT || button == GLFW_MOUSE_BUTTON_RIGHT) && action == GLFW_PRESS)
     {
         if((pointerLocked & POINTER_HOVERING) == POINTER_HOVERING)
         {
@@ -207,8 +218,16 @@ void handleCursorPosition(GLFWwindow* window, double xpos, double ypos)
     if((pointerLocked & POINTER_LOCKED) == POINTER_LOCKED)
     {
         printf("Mouse movement: %.3f %.3f\n", xpos - subx, ypos - suby);
-        cubey.offset[0] -= xpos - subx;
-        cubey.offset[1] += ypos - suby;
+        if((pointerLocked & POINTER_RMBDOWN) != POINTER_RMBDOWN)
+        {
+            cubey.offset[0] -= (xpos - subx) * .125;
+            cubey.offset[1] += (ypos - suby) * .125;
+        }
+        else
+        {
+            cubey.rot_x -= glm_rad(ypos - suby);
+            cubey.rot_y += glm_rad(xpos - subx);
+        }
     }
     subx = xpos;
     suby = ypos;
@@ -231,9 +250,11 @@ unsigned int createGLTexture(image_t source)
     unsigned int texture;
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
         source.width, source.height, 0,
-        GL_RGBA8, GL_UNSIGNED_BYTE, source.data);
+        GL_RGBA, GL_UNSIGNED_BYTE, source.data);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -399,6 +420,8 @@ void drawObject(const globject_t* object)
     mat4 model;
     glm_mat4_identity(model);
     glm_translate(model, object->offset);
+    glm_rotate_x(model, object->rot_x, model);
+    glm_rotate_y(model, object->rot_y, model);
     glUniformMatrix4fv(object->material.modelMatrixUniform, 1, GL_FALSE, model[0]);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
