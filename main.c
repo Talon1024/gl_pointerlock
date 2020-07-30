@@ -4,11 +4,12 @@
 #include <GLFW/glfw3.h>
 #include "pngload.h"
 #include "cube.h"
+#include "shader.h"
 #include <cglm/affine.h>
 #include <cglm/cam.h>
 
 typedef struct glmaterial {
-    unsigned int shaderProgram;
+    shader_t* shaderProgram;
     int modelMatrixUniform;
 } glmaterial_t;
 
@@ -24,7 +25,16 @@ typedef struct globject {
     unsigned int drawCount; // Number of elements to draw using glDrawArrays or glDrawElements
 } globject_t;
 
-globject_t cubey;
+#define POINTER_LOCKED (1 << 0)
+#define POINTER_HOVERING (1 << 1)
+#define POINTER_RMBDOWN (1 << 2)
+#define POINTER_LMBDOWN (1 << 3)
+typedef struct eventdata {
+    globject_t* cubey;
+    unsigned char pointerLockStatus;
+    double subx;
+    double suby;
+} eventdata_t;
 
 GLFWwindow* createWindow();
 
@@ -40,12 +50,6 @@ void handleKeyEvent(GLFWwindow* window, int key, int scancode, int action, int m
 void handleCursorPosition(GLFWwindow* window, double xpos, double ypos);
 void handleCursorHover(GLFWwindow* window, int entered);
 void handleMouseButtonPress(GLFWwindow* window, int button, int action, int mod);
-
-#define POINTER_LOCKED (1 << 0)
-#define POINTER_HOVERING (1 << 1)
-#define POINTER_RMBDOWN (1 << 2)
-#define POINTER_LMBDOWN (1 << 3)
-unsigned char pointerLocked = 0;
 
 int main(int argc, char** argv)
 {
@@ -63,6 +67,12 @@ int main(int argc, char** argv)
         glfwTerminate();
         return 1;
     }
+    eventdata_t eventData;
+    eventData.subx = 0;
+    eventData.suby = 0;
+    eventData.cubey = malloc(sizeof(globject_t));
+    memset(eventData.cubey, 0, sizeof(globject_t));
+    glfwSetWindowUserPointer(window, &eventData);
     glfwMakeContextCurrent(window);
     gladLoadGLLoader((GLADloadproc) glfwGetProcAddress);
     // Now that the window is open, load the data
@@ -73,45 +83,48 @@ int main(int argc, char** argv)
     glActiveTexture(GL_TEXTURE0);
     unsigned int pointerLockTexture = createGLTexture(pointerLockImage);
     // Set up shader program
-    unsigned int shaderProgram = setupShaderProgram("cube.vert", "cube.frag");
+    shader_t cubeyShader;
+    int shaderProgram = shader_setup(&cubeyShader, "cube.vert", "cube.frag");
     if(shaderProgram == 0)
     {
         fputs("Failed to set up shaders!\n", stderr);
+        shader_destroy(&cubeyShader);
         glfwTerminate();
         return 1;
     }
-    cubey.material.shaderProgram = shaderProgram;
-    int posAttribute = glGetAttribLocation(shaderProgram, "in_position");
-    int colourAttribute = glGetAttribLocation(shaderProgram, "in_colour");
-    cubey.material.modelMatrixUniform = glGetUniformLocation(shaderProgram, "model");
-    int viewUniform = glGetUniformLocation(shaderProgram, "view");
-    int projectionUniform = glGetUniformLocation(shaderProgram, "projection");
+    eventData.cubey->material.shaderProgram = &cubeyShader;
+    eventData.cubey->material.modelMatrixUniform = shader_get_uniform(&cubeyShader, "model");
+    int posAttribute = shader_get_attribute(&cubeyShader, "in_position");
+    int colourAttribute = shader_get_attribute(&cubeyShader, "in_colour");
+    int viewUniform = shader_get_uniform(&cubeyShader, "view");
+    int projectionUniform = shader_get_uniform(&cubeyShader, "projection");
     // Set up vertex array object and buffers for cube
-    setupObject(cube, &cubey);
-    glBindVertexArray(cubey.VAO);
-    glBindBuffer(GL_ARRAY_BUFFER, cubey.VBO);
+    setupObject(cube, eventData.cubey);
+    glBindVertexArray(eventData.cubey->VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, eventData.cubey->VBO);
     glVertexAttribPointer(posAttribute, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), NULL);
     glEnableVertexAttribArray(posAttribute);
-    glBindBuffer(GL_ARRAY_BUFFER, cubey.NBO);
+    glBindBuffer(GL_ARRAY_BUFFER, eventData.cubey->NBO);
     glVertexAttribPointer(colourAttribute, 1, GL_FLOAT, GL_FALSE, 1 * sizeof(float), NULL);
     glEnableVertexAttribArray(colourAttribute);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
-    cubey.drawCount = cube->triIndexCount * 3;
+    eventData.cubey->drawCount = cube->triIndexCount * 3;
     // Set up pointer lock icon
     globject_t lockIcon;
-    shaderProgram = setupShaderProgram("lockIcon.vert", "lockIcon.frag");
+    shader_t lockShader;
+    shaderProgram = shader_setup(&lockShader, "lockIcon.vert", "lockIcon.frag");
     if(shaderProgram == 0)
     {
         fputs("Failed to set up shaders!\n", stderr);
         glfwTerminate();
         return 1;
     }
-    lockIcon.material.shaderProgram = shaderProgram;
-    int windowSizeUniform = glGetUniformLocation(shaderProgram, "windowSize");
-    int iconTextureUniform = glGetUniformLocation(shaderProgram, "iconTex");
-    int posAttribute2 = glGetAttribLocation(shaderProgram, "in_position");
-    int uvAttribute = glGetAttribLocation(shaderProgram, "in_uv");
+    lockIcon.material.shaderProgram = &lockShader;
+    int windowSizeUniform = shader_get_uniform(&lockShader, "windowSize");
+    int iconTextureUniform = shader_get_uniform(&lockShader, "iconTex");
+    int posAttribute2 = shader_get_attribute(&lockShader, "in_position");
+    int uvAttribute = shader_get_attribute(&lockShader, "in_uv");
     setupPointerLockIcon(&lockIcon, posAttribute2, uvAttribute);
     // Process input and render
     glfwSetKeyCallback(window, handleKeyEvent);
@@ -126,12 +139,12 @@ int main(int argc, char** argv)
         glEnablei(GL_BLEND, 0);
         glBlendFuncSeparate(GL_SRC_COLOR, GL_SRC_COLOR, GL_SRC_ALPHA, GL_ZERO);
         // Draw pointer lock icon
-        if((pointerLocked & POINTER_LOCKED) == POINTER_LOCKED)
+        if((eventData.pointerLockStatus & POINTER_LOCKED) == POINTER_LOCKED)
         {
             glDisable(GL_CULL_FACE);
             glFrontFace(GL_CCW);
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-            glUseProgram(lockIcon.material.shaderProgram);
+            glUseProgram(lockIcon.material.shaderProgram->programId);
             glUniform2f(windowSizeUniform, 400., 300.);
             glUniform1i(iconTextureUniform, 0);
             glActiveTexture(GL_TEXTURE0);
@@ -142,7 +155,6 @@ int main(int argc, char** argv)
             glDrawElements(GL_TRIANGLES, lockIcon.drawCount, GL_UNSIGNED_INT, 0);
         }
         // Draw teh cube
-        glUseProgram(cubey.material.shaderProgram);
         mat4 view, projection;
         glm_mat4_identity(view);
         glm_translate_z(view, -100);
@@ -150,27 +162,31 @@ int main(int argc, char** argv)
         glm_perspective(75.0, 4./3., 0.1, 1000., projection);
         glUniformMatrix4fv(viewUniform, 1, GL_FALSE, view[0]);
         glUniformMatrix4fv(projectionUniform, 1, GL_FALSE, projection[0]);
-        drawObject(&cubey);
+        drawObject(eventData.cubey);
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
+    shader_destroy(&cubeyShader);
     destroyIndexedObject(cube);
     // Free OpenGL resources
     glDeleteTextures(1, &pointerLockTexture);
     // Free GLFW resources
     glfwDestroyWindow(window);
     glfwTerminate();
+    // Free app resources
+    free(eventData.cubey);
     // Exit
     return 0;
 }
 
 void handleKeyEvent(GLFWwindow* window, int key, int scancode, int action, int mod)
 {
+    eventdata_t* eventData = (eventdata_t*) glfwGetWindowUserPointer(window);
     if(key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
     {
-        if((pointerLocked & POINTER_LOCKED) == POINTER_LOCKED)
+        if((eventData->pointerLockStatus & POINTER_LOCKED) == POINTER_LOCKED)
         {
-            pointerLocked &= ~POINTER_LOCKED;
+            eventData->pointerLockStatus &= ~POINTER_LOCKED;
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
         }
         else
@@ -182,39 +198,41 @@ void handleKeyEvent(GLFWwindow* window, int key, int scancode, int action, int m
 
 void handleCursorHover(GLFWwindow* window, int entered)
 {
+    eventdata_t* eventData = (eventdata_t*) glfwGetWindowUserPointer(window);
     if(entered)
     {
-        pointerLocked |= POINTER_HOVERING;
+        eventData->pointerLockStatus |= POINTER_HOVERING;
     }
     else
     {
-        pointerLocked &= ~POINTER_HOVERING;
+        eventData->pointerLockStatus &= ~POINTER_HOVERING;
     }
 }
 
 void handleMouseButtonPress(GLFWwindow* window, int button, int action, int mod)
 {
+    eventdata_t* eventData = (eventdata_t*) glfwGetWindowUserPointer(window);
     if(button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS)
     {
-        pointerLocked |= POINTER_RMBDOWN;
+        eventData->pointerLockStatus |= POINTER_RMBDOWN;
     }
     if(button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_RELEASE)
     {
-        pointerLocked &= ~POINTER_RMBDOWN;
+        eventData->pointerLockStatus &= ~POINTER_RMBDOWN;
     }
     if(button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
     {
-        pointerLocked |= POINTER_LMBDOWN;
+        eventData->pointerLockStatus |= POINTER_LMBDOWN;
     }
     if(button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE)
     {
-        pointerLocked &= ~POINTER_LMBDOWN;
+        eventData->pointerLockStatus &= ~POINTER_LMBDOWN;
     }
     if((button == GLFW_MOUSE_BUTTON_LEFT || button == GLFW_MOUSE_BUTTON_RIGHT) && action == GLFW_PRESS)
     {
-        if((pointerLocked & POINTER_HOVERING) == POINTER_HOVERING)
+        if((eventData->pointerLockStatus & POINTER_HOVERING) == POINTER_HOVERING)
         {
-            pointerLocked |= POINTER_LOCKED;
+            eventData->pointerLockStatus |= POINTER_LOCKED;
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             if(glfwRawMouseMotionSupported())
             {
@@ -224,27 +242,25 @@ void handleMouseButtonPress(GLFWwindow* window, int button, int action, int mod)
     }
 }
 
-double subx = 0.0;
-double suby = 0.0;
-
 void handleCursorPosition(GLFWwindow* window, double xpos, double ypos)
 {
-    if((pointerLocked & POINTER_LOCKED) == POINTER_LOCKED)
+    eventdata_t* eventData = (eventdata_t*) glfwGetWindowUserPointer(window);
+    if((eventData->pointerLockStatus & POINTER_LOCKED) == POINTER_LOCKED)
     {
-        printf("Mouse movement: %.3f %.3f\n", xpos - subx, ypos - suby);
-        if((pointerLocked & POINTER_LMBDOWN) == POINTER_LMBDOWN)
+        printf("Mouse movement: %.3f %.3f\n", xpos - eventData->subx, ypos - eventData->suby);
+        if((eventData->pointerLockStatus & POINTER_LMBDOWN) == POINTER_LMBDOWN)
         {
-            cubey.offset[0] -= (xpos - subx) * .125;
-            cubey.offset[1] += (ypos - suby) * .125;
+            eventData->cubey->offset[0] -= (xpos - eventData->subx) * .125;
+            eventData->cubey->offset[1] += (ypos - eventData->suby) * .125;
         }
-        else if((pointerLocked & POINTER_RMBDOWN) == POINTER_RMBDOWN)
+        else if((eventData->pointerLockStatus & POINTER_RMBDOWN) == POINTER_RMBDOWN)
         {
-            cubey.rot_x -= glm_rad(ypos - suby);
-            cubey.rot_y += glm_rad(xpos - subx);
+            eventData->cubey->rot_x -= glm_rad(ypos - eventData->suby);
+            eventData->cubey->rot_y += glm_rad(xpos - eventData->subx);
         }
     }
-    subx = xpos;
-    suby = ypos;
+    eventData->subx = xpos;
+    eventData->suby = ypos;
 }
 
 
@@ -443,6 +459,7 @@ void drawObject(const globject_t* object)
     glm_translate(model, object->offset);
     glm_rotate_x(model, object->rot_x, model);
     glm_rotate_y(model, object->rot_y, model);
+    glUseProgram(object->material.shaderProgram->programId);
     glUniformMatrix4fv(object->material.modelMatrixUniform, 1, GL_FALSE, model[0]);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
