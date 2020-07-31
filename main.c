@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "glad.h"
 #include <GLFW/glfw3.h>
 #include "pngload.h"
@@ -41,9 +42,6 @@ GLFWwindow* createWindow();
 unsigned int createGLTexture(image_t source);
 void setupPointerLockIcon(globject_t* object, int posAttribute, int uvAttribute);
 void setupObject(indexedgeometry3d_t* source, globject_t* object);
-unsigned int setupShaderProgram(
-    const char* vertexShaderSourceFilename,
-    const char* fragmentShaderSourceFilename);
 void drawObject(const globject_t* object);
 
 void handleKeyEvent(GLFWwindow* window, int key, int scancode, int action, int mod);
@@ -364,92 +362,6 @@ void setupObject(indexedgeometry3d_t* source, globject_t* object)
         source->triIndexCount * 3 * sizeof(unsigned int),
         source->indices, GL_STATIC_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-}
-
-unsigned int setupShaderProgram(
-    const char* vertexShaderSourceFilename,
-    const char* fragmentShaderSourceFilename)
-{
-    unsigned int program = glCreateProgram();
-    unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    unsigned int pixelShader = glCreateShader(GL_FRAGMENT_SHADER);
-    // Read and store vertex shader
-    FILE* vShaderFile = fopen(vertexShaderSourceFilename, "rb");
-    if(vShaderFile == NULL)
-    {
-        fprintf(stderr, "Vertex shader %s not found!\n", vertexShaderSourceFilename);
-        glDeleteProgram(program);
-        glDeleteShader(vertexShader);
-        glDeleteShader(pixelShader);
-        return 0;
-    }
-    fseek(vShaderFile, 0, SEEK_END);
-    int vShaderLength = (int) ftell(vShaderFile);
-    fseek(vShaderFile, 0, SEEK_SET);
-    char* vShaderSource = (char*) malloc(vShaderLength);
-    fread(vShaderSource, 1, vShaderLength, vShaderFile);
-    fclose(vShaderFile);
-    // Read and store fragment shader
-    FILE* fShaderFile = fopen(fragmentShaderSourceFilename, "rb");
-    if(fShaderFile == NULL)
-    {
-        fprintf(stderr, "Fragment shader %s not found!\n", fragmentShaderSourceFilename);
-        glDeleteProgram(program);
-        glDeleteShader(vertexShader);
-        glDeleteShader(pixelShader);
-        return 0;
-    }
-    fseek(fShaderFile, 0, SEEK_END);
-    int fShaderLength = (int) ftell(fShaderFile);
-    fseek(fShaderFile, 0, SEEK_SET);
-    char* fShaderSource = (char*) malloc(fShaderLength);
-    fread(fShaderSource, 1, fShaderLength, fShaderFile);
-    fclose(fShaderFile);
-    // Add sources
-    glShaderSource(vertexShader, 1, &vShaderSource, &vShaderLength);
-    glShaderSource(pixelShader, 1, &fShaderSource, &fShaderLength);
-    // Compile shaders, and write any errors to stderr
-    glCompileShader(vertexShader);
-    int shaderInfoLength;
-    int compileStatus;
-    char* shaderInfo;
-    glGetShaderiv(vertexShader, GL_INFO_LOG_LENGTH, &shaderInfoLength);
-    if(shaderInfoLength > 0)
-    {
-        shaderInfo = malloc(shaderInfoLength);
-        glGetShaderInfoLog(vertexShader, shaderInfoLength, &shaderInfoLength, shaderInfo);
-        fprintf(stderr, "Vertex shader %s:\n%s\n", vertexShaderSourceFilename, shaderInfo);
-        free(shaderInfo);
-    }
-    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &compileStatus);
-    if(compileStatus == GL_FALSE)
-    {
-        glDeleteProgram(program);
-        glDeleteShader(vertexShader);
-        glDeleteShader(pixelShader);
-        return 0;
-    }
-    glCompileShader(pixelShader);
-    glGetShaderiv(pixelShader, GL_INFO_LOG_LENGTH, &shaderInfoLength);
-    if(shaderInfoLength > 0)
-    {
-        shaderInfo = malloc(shaderInfoLength);
-        glGetShaderInfoLog(pixelShader, shaderInfoLength, &shaderInfoLength, shaderInfo);
-        fprintf(stderr, "Fragment shader %s:\n%s\n", fragmentShaderSourceFilename, shaderInfo);
-        free(shaderInfo);
-    }
-    glGetShaderiv(pixelShader, GL_COMPILE_STATUS, &compileStatus);
-    if(compileStatus == GL_FALSE)
-    {
-        glDeleteProgram(program);
-        glDeleteShader(vertexShader);
-        glDeleteShader(pixelShader);
-        return 0;
-    }
-    glAttachShader(program, vertexShader);
-    glAttachShader(program, pixelShader);
-    glLinkProgram(program);
-    return program;
 }
 
 void drawObject(const globject_t* object)
