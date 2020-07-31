@@ -1,5 +1,6 @@
 #include "cube.h"
 #include <stdlib.h>
+#include <string.h>
 
 indexedgeometry3d_t* makeIndexedCube()
 {

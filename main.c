@@ -8,6 +8,7 @@
 #include "shader.h"
 #include <cglm/affine.h>
 #include <cglm/cam.h>
+#include <time.h>
 
 typedef struct glmaterial {
     shader_t* shaderProgram;
